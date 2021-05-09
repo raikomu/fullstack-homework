@@ -1,16 +1,18 @@
 import { PureComponent } from 'react'
-import { sortBy } from 'lodash'
+import { sortBy, find } from 'lodash'
+import { v4 as uuidv4 } from 'uuid'
 
 import CropSelect from './CropSelect'
-import { Crop, Field, SeasonalCrop } from './types'
-import { fetchCrops, fetchFields } from './api'
+import { Crop, Field, SeasonalCrop, HumusBalanceData } from './types'
+import { fetchCrops, fetchFields, fetchHumusBalances } from './api'
 import buildNewFieldsState from './buildNewFieldsState'
 
 type Props = {}
 
 type State = {
   allCrops: Array<Crop>,
-  fields: Array<Field>
+  fields: Array<Field>,
+  humusBalances: Array<HumusBalanceData>
 }
 
 export default class Table extends PureComponent<Props, State> {
@@ -20,14 +22,20 @@ export default class Table extends PureComponent<Props, State> {
     this.state = {
       allCrops: [],
       fields: [],
+      humusBalances: [],
     }
   }
 
-  componentDidMount = async () =>
+  componentDidMount = async () => {
+    let fields = await fetchFields()
+    let humusBalances = await fetchHumusBalances(fields)
+
     this.setState({
-      fields: await fetchFields(),
+      fields: fields,
+      humusBalances: humusBalances,
       allCrops: await fetchCrops(),
     })
+  }
 
   render = () =>
     <div className="table">
@@ -52,11 +60,13 @@ export default class Table extends PureComponent<Props, State> {
 
       {sortBy(field.crops, crop => crop.year).map(seasonalCrop => this.renderCropCell(field, seasonalCrop))}
 
-      <div className="table__cell table__cell--right">--</div>
+      <div className="table__cell table__cell--right">
+        {find(this.state.humusBalances, balance => balance.field_id === field.id)?.humus_balance}
+      </div>
     </div>
 
   renderCropCell = (field: Field, seasonalCrop: SeasonalCrop) =>
-    <div className="table__cell table__cell--center table__cell--with-select">
+    <div className="table__cell table__cell--center table__cell--with-select" key={uuidv4()}>
       <CropSelect
         selectedCrop={seasonalCrop.crop}
         allCrops={this.state.allCrops}
@@ -64,8 +74,12 @@ export default class Table extends PureComponent<Props, State> {
       />
     </div>
 
-  changeFieldCrop = (newCrop: Crop | null, fieldId: number, cropYear: number) =>
-    this.setState(
-      buildNewFieldsState(this.state.fields, newCrop, fieldId, cropYear),
-    )
+  changeFieldCrop = async (newCrop: Crop | null, fieldId: number, cropYear: number) => {
+    let newFields = buildNewFieldsState(this.state.fields, newCrop, fieldId, cropYear)
+    let newHumusBalances = await fetchHumusBalances(newFields.fields)
+    this.setState({
+      ...newFields,
+      humusBalances: newHumusBalances,
+    })
+  }
 }
